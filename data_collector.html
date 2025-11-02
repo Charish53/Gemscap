@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Binance Real-Time Data Collector</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+  body { margin: 0; padding: 16px; background: #0b0f14; color: #e6edf3; }
+  .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; padding: 16px; max-width: 980px; margin: 0 auto; }
+  input, button { padding: 10px 16px; border-radius: 8px; border: 1px solid #334155; background: #0b1220; color:#e6edf3 }
+  button.primary { background:#0ea5e9; color:#0b0f14; font-weight:600 }
+  button.success { background:#22c55e; color:#0b0f14; font-weight:600 }
+  .row { display:grid; grid-template-columns: 1fr 1fr; gap:12px }
+  .log { background:#0b1220; border:1px solid #1f2937; border-radius:10px; padding:12px; height:320px; overflow:auto; white-space:pre; font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace }
+</style>
+</head>
+<body>
+<div class="card">
+  <h2 style="margin-top:0">Binance Real-Time Data Collector</h2>
+  <div class="row">
+    <div>
+      <label>Symbols (comma-separated, lowercase)</label>
+      <input id="symbols" value="btcusdt,ethusdt">
+    </div>
+    <div style="display:flex; gap:8px; align-items:flex-end; justify-content:flex-end">
+      <button id="start" class="primary">Start</button>
+      <button id="stop">Stop</button>
+      <button id="sendToAPI" class="success">Send to API</button>
+      <button id="download">Download NDJSON</button>
+      <button id="clear">Clear</button>
+    </div>
+  </div>
+  <p id="stats">Buffered: 0 | Sent to API: 0</p>
+  <div class="log" id="log"></div>
+</div>
+<script>
+(()=>{
+  const $=id=>document.getElementById(id);
+  let sockets=[], buffer=[], running=false, sentCount=0;
+  const API_URL = 'http://localhost:8000/api/ingest/ticks';
+  
+  // Check API connection on load
+  (async function checkAPI() {
+    try {
+      const response = await fetch('http://localhost:8000/health', { method: 'GET' });
+      if (response.ok) {
+        log('✓ API server is running');
+      } else {
+        log('⚠️ API server responded with error');
+      }
+    } catch (error) {
+      log('✗ API server is not running. Please start the application first.');
+      log('  Run: ./start.sh or python3 app.py --mode full');
+    }
+  })();
+  
+  function log(m){ 
+    const ts=new Date().toISOString(); 
+    $('log').textContent+=`[${ts}] ${m}\n`; 
+    $('log').scrollTop=$('log').scrollHeight; 
+  }
+  
+  function update(){ 
+    $('stats').textContent = `Buffered: ${buffer.length} | Sent to API: ${sentCount}`; 
+  }
+  
+  function normalize(j){ 
+    const ts=new Date(j.T||j.E).toISOString(); 
+    return {symbol:j.s, ts, price:Number(j.p), size:Number(j.q)}; 
+  }
+  
+  // Send buffer to Python API
+  async function sendBufferToAPI() {
+    if (buffer.length === 0) {
+      log('No data to send');
+      return;
+    }
+    
+    try {
+      log(`Sending ${buffer.length} ticks to Python API...`);
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(buffer)
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        sentCount += result.processed;
+        log(`✓ Successfully sent ${result.processed} ticks to Python API`);
+        log(`  Symbols: ${result.symbols.join(', ')}`);
+        buffer = []; // Clear buffer after successful send
+        update();
+      } else {
+        const error = await response.text();
+        log(`✗ API error: ${error}`);
+      }
+    } catch (error) {
+      log(`✗ Failed to send: ${error.message}`);
+    }
+  }
+  
+  // Auto-send every 5 seconds when running
+  let autoSendInterval = null;
+  
+  $('start').onclick=()=>{
+    if(running) {
+      log('Already running. Click Stop first.');
+      return;
+    }
+    running=true;
+    log('🚀 Starting data collection...'); 
+    running=true;
+    const syms=$('symbols').value.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
+    if(!syms.length){ 
+      log('✗ No symbols provided');
+      running=false;
+      return;
+    }
+    log(`📊 Connecting to symbols: ${syms.join(', ')}`);
+    
+    // Start auto-sending
+    autoSendInterval = setInterval(() => {
+      if (buffer.length > 0) {
+        const toSend = buffer.splice(0, 100); // Send 100 at a time
+        fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(toSend)
+        }).then(r => {
+          if(r.ok) {
+            return r.json();
+          } else {
+            throw new Error(`API returned status ${r.status}`);
+          }
+        }).then(result => {
+          sentCount += result.processed;
+          update();
+          log(`✓ Auto-sent ${result.processed} ticks to API`);
+          log(`  Total sent: ${sentCount} ticks`);
+        }).catch(err => {
+          log(`✗ Auto-send failed: ${err.message}`);
+          log(`  Make sure API server is running (./start.sh)`);
+          // Re-add to buffer if send failed
+          buffer.unshift(...toSend);
+          update();
+        });
+      }
+    }, 5000); // Every 5 seconds
+    
+    sockets=syms.map(sym=>{
+      const url=`wss://fstream.binance.com/ws/${sym}@trade`;
+      const ws=new WebSocket(url);
+      ws.onopen=()=>log(`WS connected: ${sym}`);
+      ws.onmessage=(ev)=>{ 
+        try{ 
+          const j=JSON.parse(ev.data); 
+          if(j.e==='trade'){
+            buffer.push(normalize(j)); 
+            update();
+            // Log every 10th tick to show activity without spamming
+            if(buffer.length % 10 === 0) {
+              log(`📊 Buffered ${buffer.length} ticks`);
+            }
+          }
+        }catch(e){
+          log(`Error parsing message: ${e.message}`);
+        } 
+      };
+      ws.onclose=(ev)=>log(`WS closed ${sym} code=${ev.code}`);
+      ws.onerror=(ev)=>log(`WS error ${sym}`);
+      return ws;
+    });
+  };
+  
+  $('stop').onclick=()=>{
+    sockets.forEach(ws=>{ try{ ws.close(1000,'user stop'); }catch{} });
+    sockets=[];
+    if (autoSendInterval) {
+      clearInterval(autoSendInterval);
+      autoSendInterval = null;
+    }
+    running=false; 
+    log('Stopped.');
+  };
+  
+  $('sendToAPI').onclick=()=>{
+    sendBufferToAPI();
+  };
+  
+  $('download').onclick=()=>{
+    const ndjson=buffer.map(x=>JSON.stringify(x)).join('\n');
+    const blob=new Blob([ndjson], {type:'application/x-ndjson'});
+    const a=document.createElement('a'); 
+    a.href=URL.createObjectURL(blob);
+    const ts=new Date().toISOString().replaceAll(':','-'); 
+    a.download=`ticks_${ts}.ndjson`;
+    document.body.appendChild(a); 
+    a.click(); 
+    a.remove();
+  };
+  
+  $('clear').onclick=()=>{ 
+    buffer=[]; 
+    sentCount=0;
+    update(); 
+    log('Cleared buffer.'); 
+  };
+})();
+</script>
+</body>
+</html>

@@ -4,12 +4,12 @@ Real-time cryptocurrency market analytics platform with live data ingestion, qua
 
 ## Demo Video
 
-<video width="100%" controls>
-  <source src="media/demo.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+📹 **[Watch Demo Video](https://github.com/Charish53/Gemscap/raw/main/media/demo.mp4)**
 
-> **Note:** Place your video file in the `media/` folder and name it `demo.mp4` (or update the filename in the code above).
+Or click the link below to view/download:
+- [Direct Video Link](https://github.com/Charish53/Gemscap/raw/main/media/demo.mp4)
+
+> **Note:** The video is stored in the `media/` folder. Click the link above to view it.
 
 ## Features
 

@@ -2,6 +2,15 @@
 
 Real-time cryptocurrency market analytics platform with live data ingestion, quantitative analytics, and interactive visualization dashboard.
 
+## Demo Video
+
+<video width="100%" controls>
+  <source src="media/demo.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
+
+> **Note:** Place your video file in the `media/` folder and name it `demo.mp4` (or update the filename in the code above).
+
 ## Features
 
 - **Real-time Data Ingestion**: Live tick data from Binance WebSocket streams

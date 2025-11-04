@@ -5,11 +5,12 @@ Real-time cryptocurrency market analytics platform with live data ingestion, qua
 ## Demo Video
 
 📹 **[Watch Demo Video](https://github.com/Charish53/Gemscap/raw/main/media/demo.mp4)**
-
 Or click the link below to view/download:
 - [Direct Video Link](https://github.com/Charish53/Gemscap/raw/main/media/demo.mp4)
 
 > **Note:** The video is stored in the `media/` folder. Click the link above to view it.
+Or watch on Google Drive:
+- [Google Drive Link](https://drive.google.com/file/d/1J_G_ATjOzq577oG8h4YYuLiaOuOuN-k8/view?usp=sharing)
 
 ## Features
 
